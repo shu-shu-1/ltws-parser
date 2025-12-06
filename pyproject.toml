@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
-    {name = "Little Tree Studio", email = "contact@littletree.studio"}
+    {name = "Little Tree Studio", email = "studio@zsxiaoshu.cn"}
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -30,19 +30,18 @@ classifiers = [
 ]
 dependencies = [
     "rtoml>=0.11.0",
-    "pydantic>=2.0.0",
     "requests>=2.28.0",
     "httpx>=0.24.0",
+    "pydantic>=2.10.6",
 ]
 
 [project.optional-dependencies]
 cli = ["click>=8.0.0", "rich>=13.0.0"]
 
 [project.urls]
-Homepage = "https://github.com/littletree-studio/wallpaper-source-parser"
-Documentation = "https://littletree-wallpaper-source.readthedocs.io"
-Repository = "https://github.com/littletree-studio/wallpaper-source-parser"
-"Bug Tracker" = "https://github.com/littletree-studio/wallpaper-source-parser/issues"
+Homepage = "https://github.com/shu-shu-1/ltws-parser"
+Repository = "https://github.com/shu-shu-1/ltws-parser"
+"Bug Tracker" = "https://github.com/shu-shu-1/ltws-parser/issues"
 
 [project.scripts]
 ltws = "ltws.cli:main"

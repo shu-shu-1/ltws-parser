@@ -285,7 +285,7 @@ wheels = [
 ]
 
 [[package]]
-name = "littletree-wallpaper-source"
+name = "ltws-parser"
 version = "1.0.0"
 source = { editable = "." }
 dependencies = [
@@ -310,7 +310,7 @@ cli = [
 requires-dist = [
     { name = "click", marker = "extra == 'cli'", specifier = ">=8.0.0" },
     { name = "httpx", specifier = ">=0.24.0" },
-    { name = "pydantic", specifier = ">=2.0.0" },
+    { name = "pydantic", specifier = ">=2.10.6" },
     { name = "requests", specifier = ">=2.28.0" },
     { name = "rich", marker = "extra == 'cli'", specifier = ">=13.0.0" },
     { name = "rtoml", specifier = ">=0.11.0" },
