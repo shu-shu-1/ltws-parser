@@ -38,6 +38,9 @@ from .utils import (
 from .validator import LTWSValidator
 from .variables import URLTemplateEngine, VariableEngine
 
+# CLI 入口点
+from .cli import cli
+
 __version__ = "1.0.0"
 __all__ = [
     # 主要类
@@ -46,6 +49,7 @@ __all__ = [
     "LTWSPackager",
     "VariableEngine",
     "URLTemplateEngine",
+    "cli",
 
     # 数据模型
     "WallpaperSource",

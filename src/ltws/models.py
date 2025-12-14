@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, root_validator, validator
+from pydantic import BaseModel, Field, model_validator, field_validator
 
 
 class ParameterType(str, Enum):
@@ -43,20 +43,20 @@ class Parameter(BaseModel):
     pattern: Optional[str] = None
     description: Optional[str] = None
 
-    @validator("key")
+    @field_validator("key")
     def validate_key(cls, v):
         """验证参数键名"""
         if not re.match(r"^[a-z][a-z0-9_]*$", v):
             raise ValueError("参数键名只能包含小写字母、数字和下划线，且必须以字母开头")
         return v
 
-    @root_validator
-    def validate_parameter(cls, values):
+    @model_validator(mode='after')
+    def validate_parameter(self):
         """验证参数完整性"""
-        if values.get("type") == ParameterType.CHOICE:
-            if not values.get("choices"):
+        if self.type == ParameterType.CHOICE:
+            if not self.choices:
                 raise ValueError("choice类型必须提供choices列表")
-        return values
+        return self
 
 
 class Category(BaseModel):
@@ -70,7 +70,7 @@ class Category(BaseModel):
     icon: Optional[str] = None
     description: Optional[str] = None
 
-    @validator("id")
+    @field_validator("id")
     def validate_id(cls, v):
         """验证分类ID格式"""
         if not re.match(r"^[a-z][a-z0-9_]*$", v):
@@ -81,8 +81,8 @@ class Category(BaseModel):
 class RequestConfig(BaseModel):
     """请求配置模型"""
 
-    url: str
-    method: str = Field(default="GET", regex="^(GET|POST)$")
+    url: Optional[str] = None
+    method: str = Field(default="GET", pattern="^(GET|POST)$")
     timeout_seconds: Optional[int] = Field(default=None, ge=1, le=300)
     interval_seconds: Optional[int] = Field(default=None, ge=-1)
     max_concurrent: Optional[int] = Field(default=None, ge=1, le=10)
@@ -92,9 +92,11 @@ class RequestConfig(BaseModel):
     headers: Optional[Dict[str, str]] = None
     body: Optional[Union[Dict[str, Any], str]] = None
 
-    @validator("url")
+    @field_validator("url")
     def validate_url(cls, v):
         """验证URL格式"""
+        if v is None or v == "":
+            return v
         if not re.match(r"^https?://", v):
             raise ValueError("URL必须以http://或https://开头")
         return v
@@ -119,22 +121,41 @@ class FieldMapping(BaseModel):
     items: Optional[str] = None
     item_mapping: Optional[Dict[str, str]] = None
 
-    @root_validator
-    def validate_mapping(cls, values):
+    @model_validator(mode='after')
+    def validate_mapping(self):
         """验证字段映射"""
-        has_single_fields = any(values.get(field) for field in ["image", "title", "description"])
-        has_multi_fields = values.get("items") is not None
+        # 静态响应场景可以完全为空，此处只在有值时做互斥校验
+        if not any(
+            getattr(self, field)
+            for field in [
+                "image",
+                "title",
+                "description",
+                "thumbnail",
+                "width",
+                "height",
+                "author",
+                "source",
+                "tags",
+                "date",
+                "items",
+            ]
+        ) and not self.item_mapping:
+            return self
+
+        has_single_fields = any(getattr(self, field) for field in ["image", "title", "description"])
+        has_multi_fields = self.items is not None
 
         if has_single_fields and has_multi_fields:
             raise ValueError("单图模式和多图模式字段不能同时存在")
 
-        if has_multi_fields and not values.get("item_mapping"):
+        if has_multi_fields and not self.item_mapping:
             raise ValueError("多图模式必须提供item_mapping")
 
-        if values.get("item_mapping") and "image" not in values["item_mapping"]:
+        if self.item_mapping and "image" not in self.item_mapping:
             raise ValueError("item_mapping必须包含image字段")
 
-        return values
+        return self
 
 
 class ValidationRule(BaseModel):
@@ -168,17 +189,20 @@ class WallpaperAPI(BaseModel):
     # 分类绑定
     categories: List[str] = Field(..., min_items=1)
 
+    # 分类 API 图标（按分类覆盖默认 API 图标）
+    category_icons: Optional[Dict[str, str]] = None
+
     # 参数定义
     parameters: List[Parameter] = Field(default_factory=list)
 
     # 请求配置
-    request: RequestConfig
+    request: Optional[RequestConfig] = None
 
     # 响应配置
     response: Dict[str, Any] = Field(default_factory=dict)
 
     # 字段映射
-    mapping: FieldMapping
+    mapping: Optional[FieldMapping] = None
 
     # 验证配置
     validation: Optional[Dict[str, Any]] = None
@@ -196,6 +220,33 @@ class WallpaperAPI(BaseModel):
         """Pydantic配置"""
 
         extra = "allow"  # 允许额外字段
+
+    @model_validator(mode='after')
+    def validate_request_presence(self):
+        """当响应为静态类型时允许省略 request，静态缺mapping时填充空映射"""
+        response_cfg = self.response or {}
+        response_type = response_cfg.get("type") or response_cfg.get("format")
+
+        if isinstance(response_type, ResponseFormat):
+            response_type = response_type.value
+        if isinstance(response_type, str):
+            response_type = response_type.lower()
+
+        is_static = response_type in {
+            ResponseFormat.STATIC_LIST.value,
+            ResponseFormat.STATIC_DICT.value,
+        }
+
+        if self.request is None and not is_static:
+            raise ValueError("request 配置缺失")
+
+        if self.mapping is None and is_static:
+            self.mapping = FieldMapping()
+
+        if self.mapping is None and not is_static:
+            raise ValueError("mapping 配置缺失")
+
+        return self
 
 
 class WallpaperSource(BaseModel):

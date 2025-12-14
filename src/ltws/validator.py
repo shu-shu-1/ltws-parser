@@ -4,7 +4,7 @@
 import re
 from typing import Any, Dict, List
 
-from .models import ParameterType, WallpaperAPI, WallpaperSource
+from .models import ParameterType, ResponseFormat, WallpaperAPI, WallpaperSource
 
 
 class LTWSValidator:
@@ -105,6 +105,17 @@ class LTWSValidator:
         if not api.categories:
             self.errors.append(f"API '{api.name}' 没有绑定任何分类")
 
+        all_category_ids = {c.id for c in all_categories}
+
+        # 分类 API 图标检查
+        if getattr(api, "category_icons", None):
+            for cat_id, icon in api.category_icons.items():
+                if cat_id not in all_category_ids:
+                    self.errors.append(
+                        f"API '{api.name}' 分类图标引用了不存在的分类: {cat_id}",
+                    )
+                self._validate_icon(icon, f"API '{api.name}'.category_icons['{cat_id}']")
+
         # 图标格式检查
         if api.logo:
             self._validate_icon(api.logo, f"API '{api.name}'.logo")
@@ -112,11 +123,33 @@ class LTWSValidator:
         # 参数验证
         self._validate_parameters(api.parameters, api.name)
 
-        # 请求配置验证
-        self._validate_request(api.request, api.name)
+        # 请求配置验证（静态响应类型可省略）
+        is_static_response = self._is_static_response(api)
+        if api.request:
+            self._validate_request(api.request, api.name)
+        elif not is_static_response:
+            self.errors.append(f"API '{api.name}' 缺少请求配置")
 
         # 字段映射验证
-        self._validate_mapping(api.mapping, api.name)
+        if api.mapping:
+            self._validate_mapping(api.mapping, api.name, is_static_response)
+        elif not is_static_response:
+            self.errors.append(f"API '{api.name}' 字段映射配置缺失")
+
+    def _is_static_response(self, api: WallpaperAPI) -> bool:
+        """判断响应是否为静态类型，静态类型允许省略request"""
+        response_cfg = getattr(api, "response", {}) or {}
+        response_type = response_cfg.get("type") or response_cfg.get("format")
+
+        if isinstance(response_type, ResponseFormat):
+            response_type = response_type.value
+        if isinstance(response_type, str):
+            response_type = response_type.lower()
+
+        return response_type in {
+            ResponseFormat.STATIC_LIST.value,
+            ResponseFormat.STATIC_DICT.value,
+        }
 
     def _validate_parameters(self, parameters: List[Any], api_name: str) -> None:
         """验证参数"""
@@ -156,7 +189,7 @@ class LTWSValidator:
         if request.timeout_seconds and (request.timeout_seconds < 1 or request.timeout_seconds > 300):
             self.warnings.append(f"API '{api_name}' 超时时间建议在1-300秒之间")
 
-    def _validate_mapping(self, mapping: Any, api_name: str) -> None:
+    def _validate_mapping(self, mapping: Any, api_name: str, is_static: bool) -> None:
         """验证字段映射"""
         has_single = any([
             mapping.image, mapping.title, mapping.description,
@@ -164,6 +197,9 @@ class LTWSValidator:
         ])
 
         has_multi = mapping.items is not None
+
+        if is_static and not has_single and not has_multi and not mapping.item_mapping:
+            return
 
         if not has_single and not has_multi:
             self.errors.append(f"API '{api_name}' 字段映射配置不完整")
