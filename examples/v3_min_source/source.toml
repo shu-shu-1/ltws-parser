@@ -1,0 +1,11 @@
+scheme = "littletree_wallpaper_source_v3"
+identifier = "cn.zsxiaoshu.example_v3"
+name = "LTWS v3 Example"
+version = "1.0.0"
+
+description = "Minimal example for ltws-parser v3.0"
+
+# 路径（相对 source.toml 所在目录）
+categories = "categories/custom_categories.toml"
+config = "config.toml"
+apis = ["apis/*.toml"]

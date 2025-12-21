@@ -187,7 +187,7 @@ class WallpaperAPI(BaseModel):
     logo: Optional[str] = None
 
     # 分类绑定
-    categories: List[str] = Field(..., min_items=1)
+    categories: List[str] = Field(..., min_length=1)
 
     # 分类 API 图标（按分类覆盖默认 API 图标）
     category_icons: Optional[Dict[str, str]] = None
@@ -225,14 +225,19 @@ class WallpaperAPI(BaseModel):
     def validate_request_presence(self):
         """当响应为静态类型时允许省略 request，静态缺mapping时填充空映射"""
         response_cfg = self.response or {}
-        response_type = response_cfg.get("type") or response_cfg.get("format")
+        # 协议：response.format = json|toml|image_url|image_raw|static_list|static_dict
+        #      response.type = single|multi
+        # 兼容旧写法：若仅提供 type 且其值像 format，再回退
+        response_format = response_cfg.get("format")
+        if not response_format:
+            response_format = response_cfg.get("type")
 
-        if isinstance(response_type, ResponseFormat):
-            response_type = response_type.value
-        if isinstance(response_type, str):
-            response_type = response_type.lower()
+        if isinstance(response_format, ResponseFormat):
+            response_format = response_format.value
+        if isinstance(response_format, str):
+            response_format = response_format.lower()
 
-        is_static = response_type in {
+        is_static = response_format in {
             ResponseFormat.STATIC_LIST.value,
             ResponseFormat.STATIC_DICT.value,
         }
@@ -260,6 +265,11 @@ class WallpaperSource(BaseModel):
 
     # 分类定义
     categories: List[Category]
+
+    # categories.toml 的可选扩展段（协议 v3.0 支持）
+    categories_template: Optional[Dict[str, Any]] = None
+    categories_level_icons: Optional[Dict[str, str]] = None
+    category_groups: Optional[List[Dict[str, Any]]] = None
 
     # API列表
     apis: List[WallpaperAPI]

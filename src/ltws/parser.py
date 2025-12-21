@@ -94,9 +94,6 @@ class LTWSParser:
             with tarfile.open(ltws_path, "r") as tar:
                 tar.extractall(temp_path)
 
-            # 验证必需文件
-            self._validate_required_files(temp_path)
-
             # 解析提取的目录
             source = self._parse_directory(temp_path)
 
@@ -115,11 +112,13 @@ class LTWSParser:
             WallpaperSource: 壁纸源对象
 
         """
-        # 验证必需文件
-        self._validate_required_files(dir_path)
+        # source.toml 必需
+        source_file = dir_path / "source.toml"
+        if not source_file.exists():
+            raise FileNotFoundError("必需文件不存在: source.toml")
 
         # 解析 source.toml
-        source_metadata = self._parse_toml_file(dir_path / "source.toml")
+        source_metadata = self._parse_toml_file(source_file)
 
         # 验证协议版本
         if source_metadata.get("scheme") != "littletree_wallpaper_source_v3":
@@ -127,18 +126,34 @@ class LTWSParser:
                 f"不支持的协议版本: {source_metadata.get('scheme')}",
             )
 
-        # 解析 config.toml (如果存在)
-        config_path = dir_path / "config.toml"
+        # 解析 config.toml (如果存在；可由 source.toml 指定路径，默认 config.toml)
+        config_rel = source_metadata.get("config") or "config.toml"
+        config_path = dir_path / str(config_rel)
         config = {}
         if config_path.exists():
             config = self._parse_toml_file(config_path)
 
-        # 解析 categories.toml
-        categories_data = self._parse_toml_file(dir_path / "categories.toml")
+        # 解析 categories.toml（路径由 source.toml 指定）
+        categories_rel = source_metadata.get("categories")
+        if not categories_rel:
+            raise ValidationError("source.toml 缺少必需字段: categories")
+
+        categories_path = dir_path / str(categories_rel)
+        if not categories_path.exists():
+            raise FileNotFoundError(f"必需文件不存在: {categories_rel}")
+
+        categories_data = self._parse_toml_file(categories_path)
         categories = self._parse_categories(categories_data)
+
+        categories_template = categories_data.get("template") if isinstance(categories_data, dict) else None
+        categories_level_icons = categories_data.get("level_icons") if isinstance(categories_data, dict) else None
+        category_groups = categories_data.get("category_groups") if isinstance(categories_data, dict) else None
 
         # 解析 API 文件
         apis = self._parse_apis(dir_path, source_metadata)
+
+        if not apis:
+            raise FileNotFoundError("未找到任何 API 配置文件（apis/*.toml）")
 
         # 验证分类引用
         category_errors = self._validate_category_references(apis, categories)
@@ -152,36 +167,21 @@ class LTWSParser:
             categories=categories,
             apis=apis,
             source_path=str(dir_path),
+            categories_template=categories_template,
+            categories_level_icons=categories_level_icons,
+            category_groups=category_groups,
         )
 
         return source
 
     def _validate_required_files(self, dir_path: Path) -> None:
-        """验证必需文件是否存在
-        
-        Args:
-            dir_path: 目录路径
-            
-        Raises:
-            FileNotFoundError: 必需文件不存在
+        """（兼容保留）仅验证 source.toml 是否存在。
 
+        其他路径（categories/config/apis）由 source.toml 决定，在解析流程中校验。
         """
-        required_files = ["source.toml", "categories.toml"]
-
-        for file_name in required_files:
-            file_path = dir_path / file_name
-            if not file_path.exists():
-                raise FileNotFoundError(f"必需文件不存在: {file_name}")
-
-        # 检查 apis 目录
-        apis_dir = dir_path / "apis"
-        if not apis_dir.exists() or not apis_dir.is_dir():
-            raise FileNotFoundError("缺少 apis 目录")
-
-        # 检查至少一个 API 文件
-        api_files = list(apis_dir.glob("*.toml"))
-        if not api_files:
-            raise FileNotFoundError("apis 目录中没有 .toml 文件")
+        file_path = dir_path / "source.toml"
+        if not file_path.exists():
+            raise FileNotFoundError("必需文件不存在: source.toml")
 
     def _parse_toml_file(self, file_path: Path) -> Dict[str, Any]:
         """解析 TOML 文件
@@ -245,6 +245,10 @@ class LTWSParser:
 
         # 获取 API 文件模式
         api_patterns = metadata.get("apis", [])
+        if isinstance(api_patterns, str):
+            api_patterns = [api_patterns]
+        if api_patterns is None:
+            api_patterns = []
         api_files = []
 
         for pattern in api_patterns:
@@ -258,7 +262,7 @@ class LTWSParser:
                         if file_path.is_file():
                             api_files.append(file_path)
 
-        # 如果没有指定模式，查找所有 .toml 文件
+        # 如果没有指定模式，查找 apis/*.toml
         if not api_files:
             api_files = list(apis_dir.glob("*.toml"))
 
@@ -365,16 +369,28 @@ class LTWSParser:
             with tarfile.open(ltws_path, "r") as tar:
                 members = tar.getmembers()
 
-                # 检查必需文件
                 member_names = {m.name for m in members}
-                required_files = {"source.toml", "categories.toml"}
-
-                if not required_files.issubset(member_names):
+                if "source.toml" not in member_names:
                     return False
 
-                # 检查 apis 目录
-                if not any(m.name.startswith("apis/") for m in members):
+                # 至少应存在一个 API TOML（默认约束 apis/*.toml）
+                if not any(m.name.startswith("apis/") and m.name.endswith(".toml") for m in members):
                     return False
+
+                # 按 source.toml 指向检查 categories 文件是否存在
+                try:
+                    import rtoml
+
+                    source_f = tar.extractfile("source.toml")
+                    if source_f is None:
+                        return False
+                    source_data = rtoml.loads(source_f.read().decode("utf-8"))
+                    categories_rel = source_data.get("categories") or "categories.toml"
+                    if str(categories_rel) not in member_names:
+                        return False
+                except Exception:
+                    # 读失败时不强行判 false，交由解析阶段报错
+                    pass
 
             return True
         except Exception:

@@ -11,6 +11,15 @@
 - 🔧 变量替换引擎
 - 📊 详细的错误报告
 
+## 协议适配说明（v3.0 新版要点）
+
+- `source.toml` 支持用 `categories` / `config` 指向任意相对路径
+- `identifier` 允许小写字母/数字/点/下划线（反向域名风格）
+- JSON Pointer 映射支持 `*` 与 `**` 通配
+- 变量函数参数支持协议示例的冒号分隔（如 `{{random_int:1:10}}`）
+
+更多细节见：`USAGE.md` 与 `llms.txt`。
+
 ## 安装
 
 ```bash

@@ -1,0 +1,9 @@
+[request]
+timeout_seconds = 10
+max_concurrent = 2
+user_agent = "ltws-parser-smoke"
+
+[request.cache]
+enabled = true
+default_ttl_seconds = 300
+max_memory_mb = 8

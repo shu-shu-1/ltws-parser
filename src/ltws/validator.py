@@ -21,39 +21,10 @@ class LTWSValidator:
         self.errors: List[str] = []
         self.warnings: List[str] = []
 
-    def validate_source(self, source: WallpaperSource) -> bool:
-        """验证壁纸源完整性
-        
-        Args:
-            source: 壁纸源对象
-            
-        Returns:
-            bool: 是否验证通过
-
-        """
-        self.errors.clear()
-        self.warnings.clear()
-
-        # 验证元数据
-        self._validate_metadata(source.metadata)
-
-        # 验证分类
-        self._validate_categories(source.categories)
-
-        # 验证 API
-        for api in source.apis:
-            self._validate_api(api, source.categories)
-
-        # 验证分类引用
-        category_errors = source.validate_categories()
-        self.errors.extend(category_errors)
-
-        return len(self.errors) == 0
-
     def _validate_metadata(self, metadata: Dict[str, Any]) -> None:
         """验证元数据"""
         # 必需字段检查
-        required_fields = ["scheme", "identifier", "name", "version"]
+        required_fields = ["scheme", "identifier", "name", "version", "categories", "apis"]
         for field in required_fields:
             if field not in metadata:
                 self.errors.append(f"缺少必需字段: {field}")
@@ -64,8 +35,10 @@ class LTWSValidator:
 
         # 标识符格式检查
         identifier = metadata.get("identifier", "")
-        if not re.match(r"^com\.[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$", identifier):
-            self.errors.append(f"标识符格式错误: {identifier}")
+        if not re.match(r"^(?=.{3,255}$)(?=.*\.)[a-z0-9_]+(\.[a-z0-9_]+)+$", identifier):
+            self.errors.append(
+                f"标识符格式错误: {identifier}（仅小写字母/数字/点/下划线，且至少包含一个点）",
+            )
 
         # 版本格式检查
         version = metadata.get("version", "")
@@ -94,6 +67,46 @@ class LTWSValidator:
             # 图标格式检查
             if category.icon:
                 self._validate_icon(category.icon, f"categories[{i}].icon")
+
+    def validate_source(self, source: WallpaperSource) -> bool:
+        """验证壁纸源完整性
+
+        Args:
+            source: 壁纸源对象
+
+        Returns:
+            bool: 是否验证通过
+
+        """
+        self.errors.clear()
+        self.warnings.clear()
+
+        # 验证元数据
+        self._validate_metadata(source.metadata)
+
+        # categories.toml 扩展段校验（可选）
+        if isinstance(getattr(source, "categories_template", None), dict):
+            icon = source.categories_template.get("icon")
+            if icon:
+                self._validate_icon(str(icon), "categories.template.icon")
+
+        if isinstance(getattr(source, "categories_level_icons", None), dict):
+            for level, icon in source.categories_level_icons.items():
+                if icon:
+                    self._validate_icon(str(icon), f"categories.level_icons['{level}']")
+
+        # 验证分类
+        self._validate_categories(source.categories)
+
+        # 验证 API
+        for api in source.apis:
+            self._validate_api(api, source.categories)
+
+        # 验证分类引用
+        category_errors = source.validate_categories()
+        self.errors.extend(category_errors)
+
+        return len(self.errors) == 0
 
     def _validate_api(self, api: WallpaperAPI, all_categories: List[Any]) -> None:
         """验证 API"""
@@ -139,14 +152,17 @@ class LTWSValidator:
     def _is_static_response(self, api: WallpaperAPI) -> bool:
         """判断响应是否为静态类型，静态类型允许省略request"""
         response_cfg = getattr(api, "response", {}) or {}
-        response_type = response_cfg.get("type") or response_cfg.get("format")
+        response_format = response_cfg.get("format")
+        if not response_format:
+            # 兼容旧写法
+            response_format = response_cfg.get("type")
 
-        if isinstance(response_type, ResponseFormat):
-            response_type = response_type.value
-        if isinstance(response_type, str):
-            response_type = response_type.lower()
+        if isinstance(response_format, ResponseFormat):
+            response_format = response_format.value
+        if isinstance(response_format, str):
+            response_format = response_format.lower()
 
-        return response_type in {
+        return response_format in {
             ResponseFormat.STATIC_LIST.value,
             ResponseFormat.STATIC_DICT.value,
         }

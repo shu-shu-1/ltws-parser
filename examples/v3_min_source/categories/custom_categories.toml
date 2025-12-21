@@ -1,0 +1,19 @@
+[template]
+icon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/akS1mYAAAAASUVORK5CYII="
+
+default_request_interval_seconds = 0
+
+[level_icons]
+category = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/akS1mYAAAAASUVORK5CYII="
+
+[[categories]]
+id = "daily"
+name = "每日"
+category = "推荐"
+icon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/akS1mYAAAAASUVORK5CYII="
+description = "每日推荐壁纸"
+
+[[category_groups]]
+id = "featured"
+name = "精选"
+categories = ["daily"]

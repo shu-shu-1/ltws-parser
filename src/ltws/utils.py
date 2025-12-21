@@ -19,7 +19,9 @@ def validate_identifier(identifier: str) -> bool:
         bool: 是否有效
 
     """
-    pattern = r"^com\.[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$"
+    # 协议约束：反向域名风格；仅小写字母/数字/点/下划线；至少包含一个点
+    # 示例：com.example.source_v3 / cn.zsxiaoshu.wallpaper
+    pattern = r"^(?=.{3,255}$)(?=.*\.)[a-z0-9_]+(\.[a-z0-9_]+)+$"
     return bool(re.match(pattern, identifier))
 
 
@@ -121,7 +123,7 @@ def extract_base64_icon(icon_data: str) -> Optional[bytes]:
 
 
 def json_pointer_get(data: Dict[str, Any], pointer: str) -> Any:
-    """使用JSON Pointer语法获取数据
+    """使用 JSON Pointer 语法获取数据
     
     Args:
         data: JSON数据
@@ -136,23 +138,56 @@ def json_pointer_get(data: Dict[str, Any], pointer: str) -> Any:
 
     parts = pointer.split("/")[1:]  # 移除开头的空部分
 
-    current = data
-    for part in parts:
-        if isinstance(current, list):
-            try:
-                index = int(part)
-                current = current[index]
-            except (ValueError, IndexError):
-                raise KeyError(f"数组索引无效: {part}")
-        elif isinstance(current, dict):
-            if part in current:
-                current = current[part]
-            else:
-                raise KeyError(f"键不存在: {part}")
-        else:
-            raise TypeError(f"无法遍历类型: {type(current)}")
+    def children(node: Any) -> list[Any]:
+        if isinstance(node, dict):
+            return list(node.values())
+        if isinstance(node, list):
+            return list(node)
+        return []
 
-    return current
+    def step(node: Any, token: str, rest: list[str]) -> list[Any]:
+        if token == "**":
+            # 0 段匹配
+            results = walk(node, rest)
+            # N 段匹配：向下遍历继续尝试
+            for child in children(node):
+                results.extend(step(child, "**", rest))
+            return results
+
+        if token == "*":
+            results: list[Any] = []
+            for child in children(node):
+                results.extend(walk(child, rest))
+            return results
+
+        # 普通 token
+        if isinstance(node, list):
+            try:
+                index = int(token)
+                return walk(node[index], rest)
+            except (ValueError, IndexError):
+                return []
+
+        if isinstance(node, dict):
+            if token in node:
+                return walk(node[token], rest)
+            return []
+
+        return []
+
+    def walk(node: Any, tokens: list[str]) -> list[Any]:
+        if not tokens:
+            return [node]
+        return step(node, tokens[0], tokens[1:])
+
+    matched = walk(data, parts)
+    if not matched:
+        raise KeyError(f"JSON Pointer 未匹配到任何值: {pointer}")
+
+    # 兼容旧行为：无通配符时返回单值；含通配符时返回列表
+    if "*" not in parts and "**" not in parts:
+        return matched[0]
+    return matched
 
 
 def dot_path_get(data: Dict[str, Any], path: str) -> Any:

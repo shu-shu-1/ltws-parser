@@ -286,7 +286,7 @@ wheels = [
 
 [[package]]
 name = "ltws-parser"
-version = "1.4.0"
+version = "1.5.1"
 source = { editable = "." }
 dependencies = [
     { name = "click", version = "8.1.8", source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple/" }, marker = "python_full_version < '3.10'" },

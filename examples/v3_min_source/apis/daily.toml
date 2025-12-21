@@ -1,0 +1,11 @@
+name = "Daily"
+description = "Static daily wallpapers"
+logo = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/akS1mYAAAAASUVORK5CYII="
+
+categories = ["daily"]
+
+[response]
+format = "static_list"
+type = "multi"
+
+# 静态响应允许省略 request/mapping（ltws-parser 会填充空映射）

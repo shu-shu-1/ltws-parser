@@ -1,6 +1,12 @@
 # LTWS 解析器使用文档（以库用法为核心）
 
-本指南聚焦如何使用 `ltws-parser` 的类、方法、参数、返回值和报错处理，帮助在代码与 CLI 中解析、验证、打包 LTWS v3.0 壁纸源（新增支持 API 按分类图标 `category_icons`）。
+本指南聚焦如何使用 `ltws-parser` 的类、方法、参数、返回值和报错处理，帮助在代码与 CLI 中解析、验证、打包 LTWS v3.0 壁纸源。
+
+已适配协议关键点（v3.0 新版）：
+- `source.toml` 支持用 `categories` / `config` 指向任意相对路径（不再强制根目录 `categories.toml` / `config.toml`）
+- `identifier` 规则按协议放宽：仅小写字母/数字/点/下划线，且至少包含一个点（反向域名风格）
+- 变量函数参数支持协议示例的冒号分隔：`{{random_int:1:10}}`（同时兼容旧的逗号分隔）
+- JSON Pointer 路径支持 `*` 与 `**` 通配（`json_pointer_get`）
 
 ## 安装
 
@@ -66,6 +72,10 @@ print(validator.get_validation_report())
     - `create_context(**kwargs)`（提供屏幕等默认值）
 - 内置函数：`timestamp_ms`, `timestamp_s`, `date_iso`, `date_cn`, `year/month/day/hour/minute/second`, `random_string`, `random_int`, `random_hex`, `url_encode`, `uuid`。
 
+参数分隔符说明：
+- 推荐（协议示例）：冒号分隔，例如 `{{random_string:8}}`、`{{random_int:1:10}}`
+- 兼容：逗号分隔，例如 `{{random_int:1,10}}`
+
 示例：
 ```python
 from ltws import VariableEngine
@@ -89,6 +99,20 @@ ltws pack src_dir out.ltws    # 打包；支持 --overwrite
 ltws inspect file.ltws        # 查看清单
 ltws unpack file.ltws out_dir # 解包
 # 额外脚本：python scripts/ltws-cli.py / ltws-gui.py 亦可使用
+```
+
+## 最小示例（与协议路径字段一致）
+
+仓库内置了一个最小 v3 示例：`examples/v3_min_source/`，其 `source.toml` 使用：
+- `categories = "categories/custom_categories.toml"`
+- `apis = ["apis/*.toml"]`
+
+你可以直接验证与打包：
+
+```bash
+ltws validate examples/v3_min_source
+ltws pack examples/v3_min_source examples/v3_min_source.ltws --overwrite
+ltws validate examples/v3_min_source.ltws
 ```
 
 ## 代码范例
@@ -133,6 +157,15 @@ packager.pack("./my_source", "./my_source.ltws", overwrite=True)
 - **如何在 API 上为不同分类指定图标？** 在 API 文件写 `category_icons = { cat_id = "data:image/..." }`，解析后 `WallpaperAPI.category_icons` 可见，验证器会检查分类存在与图标格式。
 - **静态响应是否必须 request？** `response.format` 为 `static_list/static_dict` 时可省略 `request`，验证器会自动放行并给空映射。
 - **如何自定义变量函数？** `engine.register_function("md5", lambda s: ...)` 后即可在模板用 `{{md5:xxx}}`。
+
+## 映射路径补充（通配 JSON Pointer）
+
+当 `response.format = "json"` 时，映射路径通常使用 JSON Pointer，例如：
+- `/data/items/0/url`
+- `/data/items/*/url`（`*` 匹配一层）
+- `/**/url`（`**` 匹配任意深度）
+
+注意：`ltws-parser` 的 `json_pointer_get` 在含通配符时返回“列表”，不含通配符时返回“单值”。
 
 ## 支持与许可证
 

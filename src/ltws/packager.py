@@ -94,19 +94,44 @@ class LTWSPackager:
         self.errors.clear()
         self.warnings.clear()
 
-        # 检查必需文件
-        required_files = ["source.toml", "categories.toml"]
-        for file_name in required_files:
-            file_path = source_dir / file_name
-            if not file_path.exists():
-                self.errors.append(f"缺少必需文件: {file_name}")
+        source_file = source_dir / "source.toml"
+        if not source_file.exists():
+            self.errors.append("缺少必需文件: source.toml")
+            return False
 
-        # 检查 apis 目录
-        apis_dir = source_dir / "apis"
-        if not apis_dir.exists():
-            self.errors.append("缺少 apis 目录")
-        elif not list(apis_dir.glob("*.toml")):
-            self.errors.append("apis 目录中没有 .toml 文件")
+        # 读取 source.toml，以确定 categories/config/apis 路径
+        source_data = {}
+        try:
+            import rtoml
+
+            source_data = rtoml.loads(source_file.read_text(encoding="utf-8"))
+        except Exception as e:
+            self.errors.append(f"读取 source.toml 失败: {e!s}")
+            return False
+
+        categories_rel = source_data.get("categories")
+        if not categories_rel:
+            self.errors.append("source.toml 缺少必需字段: categories")
+        else:
+            categories_path = source_dir / str(categories_rel)
+            if not categories_path.exists():
+                self.errors.append(f"缺少必需文件: {categories_rel}")
+
+        # API 文件（按 apis 字段的 glob/路径数组）
+        api_patterns = source_data.get("apis") or []
+        if isinstance(api_patterns, str):
+            api_patterns = [api_patterns]
+
+        api_files: list[Path] = []
+        for pattern in api_patterns:
+            for file_path in source_dir.glob(str(pattern)):
+                if file_path.is_file() and file_path.suffix.lower() == ".toml":
+                    api_files.append(file_path)
+        if not api_files:
+            # 兼容：未配置 apis 时默认 apis/*.toml
+            api_files = list((source_dir / "apis").glob("*.toml")) if (source_dir / "apis").exists() else []
+        if not api_files:
+            self.errors.append("未找到任何 API 配置文件（apis/*.toml）")
 
         # 检查资源文件（不允许）
         self._check_resource_files(source_dir)
@@ -182,18 +207,15 @@ class LTWSPackager:
                 for match in icon_pattern.finditer(content):
                     icon_value = match.group(1) or match.group(2)
                     if icon_value:
-                        # 检查是否是本地文件路径
+                        # 协议要求：仅允许 Base64 data URL 或外部 URL，不允许本地路径（无论是否存在）
                         if (
                             not icon_value.startswith("data:")
                             and not icon_value.startswith("http://")
                             and not icon_value.startswith("https://")
                         ):
-                            # 可能是本地文件
-                            icon_path = source_dir / icon_value
-                            if icon_path.exists():
-                                self.errors.append(
-                                    f"不允许的本地图标文件: {toml_file.relative_to(source_dir)} -> {icon_value}",
-                                )
+                            self.errors.append(
+                                f"不允许的本地图标引用: {toml_file.relative_to(source_dir)} -> {icon_value}",
+                            )
             except Exception as e:
                 self.warnings.append(f"检查图标文件失败 {toml_file}: {e!s}")
 
@@ -205,24 +227,52 @@ class LTWSPackager:
             temp_dir: 临时目录路径
 
         """
-        # 复制必需文件
-        for file_name in ["source.toml", "categories.toml"]:
-            source_file = source_dir / file_name
-            if source_file.exists():
-                temp_dir.joinpath(file_name).write_bytes(source_file.read_bytes())
+        # source.toml
+        temp_dir.joinpath("source.toml").write_bytes((source_dir / "source.toml").read_bytes())
 
-        # 复制配置文件（如果存在）
-        config_file = source_dir / "config.toml"
-        if config_file.exists():
-            temp_dir.joinpath("config.toml").write_bytes(config_file.read_bytes())
+        source_data = {}
+        try:
+            import rtoml
 
-        # 复制 API 文件
-        apis_temp = temp_dir / "apis"
-        apis_temp.mkdir(exist_ok=True)
+            source_data = rtoml.loads((source_dir / "source.toml").read_text(encoding="utf-8"))
+        except Exception as e:
+            if self.strict:
+                raise ValidationError(f"读取 source.toml 失败: {e!s}")
 
-        apis_source = source_dir / "apis"
-        for api_file in apis_source.glob("*.toml"):
-            apis_temp.joinpath(api_file.name).write_bytes(api_file.read_bytes())
+        # categories（按 source.toml 指向路径复制）
+        categories_rel = source_data.get("categories") or "categories.toml"
+        categories_src = source_dir / str(categories_rel)
+        if categories_src.exists():
+            dst = temp_dir / str(categories_rel)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(categories_src.read_bytes())
+
+        # config（可选，按 source.toml 指向路径复制；默认 config.toml）
+        config_rel = source_data.get("config") or "config.toml"
+        config_src = source_dir / str(config_rel)
+        if config_src.exists():
+            dst = temp_dir / str(config_rel)
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(config_src.read_bytes())
+
+        # API 文件（按 apis 字段的 glob/路径数组复制；兼容缺省 apis/*.toml）
+        api_patterns = source_data.get("apis") or []
+        if isinstance(api_patterns, str):
+            api_patterns = [api_patterns]
+
+        api_files: list[Path] = []
+        for pattern in api_patterns:
+            for file_path in source_dir.glob(str(pattern)):
+                if file_path.is_file() and file_path.suffix.lower() == ".toml":
+                    api_files.append(file_path)
+        if not api_files:
+            api_files = list((source_dir / "apis").glob("*.toml")) if (source_dir / "apis").exists() else []
+
+        for api_file in api_files:
+            rel = api_file.relative_to(source_dir)
+            dst = temp_dir / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(api_file.read_bytes())
 
     def _generate_manifest(self, source_dir: Path, temp_dir: Path) -> None:
         """生成清单文件
@@ -332,16 +382,28 @@ class LTWSPackager:
             with tarfile.open(ltws_file, "r") as tar:
                 members = tar.getmembers()
 
-                # 检查必需文件
                 member_names = {m.name for m in members}
-                required_files = {"source.toml", "categories.toml"}
-
-                if not required_files.issubset(member_names):
+                if "source.toml" not in member_names:
                     return False
 
-                # 检查 apis 目录
-                if not any(m.name.startswith("apis/") for m in members):
+                # 至少应存在一个 API TOML（默认约束 apis/*.toml）
+                if not any(m.name.startswith("apis/") and m.name.endswith(".toml") for m in members):
                     return False
+
+                # 按 source.toml 指向检查 categories 文件是否存在
+                try:
+                    import rtoml
+
+                    source_f = tar.extractfile("source.toml")
+                    if source_f is None:
+                        return False
+                    source_data = rtoml.loads(source_f.read().decode("utf-8"))
+                    categories_rel = source_data.get("categories") or "categories.toml"
+                    if str(categories_rel) not in member_names:
+                        return False
+                except Exception:
+                    # 读失败时不强行判 false，交由解析阶段报错
+                    pass
 
             return True
         except Exception:

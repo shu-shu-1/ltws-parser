@@ -89,8 +89,10 @@ class VariableEngine:
 
     def _parse_function_params(self, params: str) -> list:
         """解析函数参数"""
-        # 简单的参数解析，支持逗号分隔
-        return [p.strip() for p in params.split(",")]
+        # 协议示例使用冒号分隔：{{random_int:MIN:MAX}} / {{random_string:N}}
+        # 同时兼容旧的逗号分隔写法
+        sep = "," if "," in params else ":"
+        return [p.strip() for p in params.split(sep) if p.strip() != ""]
 
     def _register_builtin_functions(self) -> None:
         """注册内置函数"""
