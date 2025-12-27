@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, model_validator, field_validator
+from pydantic import BaseModel, Field, model_validator, field_validator, ConfigDict
 
 
 class ParameterType(str, Enum):
@@ -181,6 +181,8 @@ class CacheConfig(BaseModel):
 class WallpaperAPI(BaseModel):
     """API定义模型"""
 
+    model_config = ConfigDict(extra="allow")  # 允许额外字段
+
     # 基本信息
     name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = None
@@ -215,11 +217,6 @@ class WallpaperAPI(BaseModel):
 
     # 继承配置
     inherit: Optional[str] = None
-
-    class Config:
-        """Pydantic配置"""
-
-        extra = "allow"  # 允许额外字段
 
     @model_validator(mode='after')
     def validate_request_presence(self):
